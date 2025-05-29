@@ -15,8 +15,8 @@ This project is a Discord bot designed to verify TJHSST students using their ION
 
 -   Python 3.10+
 -   `pip` (Python package installer)
--   A Discord Bot Application (see [Step 2](#step-2-create-a-discord-bot-application))
--   An ION OAuth Application (see [Step 3](#step-3-create-an-ion-oauth-application))
+-   A Discord Bot Application 
+-   An ION OAuth Application 
 -   (Optional for public access) `ngrok` or a similar tunneling service if running the web server component locally and needing external access.
 
 ## Setup Instructions
