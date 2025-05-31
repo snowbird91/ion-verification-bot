@@ -18,4 +18,4 @@ CLASS_YEAR_ROLES = json.loads(os.getenv("CLASS_YEAR_ROLES_JSON", "{}"))
 
 # For local development without HTTPS for the callback (ION requires HTTPS by default for callbacks)
 # SET THIS TO '0' or remove if your callback IS served over HTTPS
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'
