@@ -1,32 +1,29 @@
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
-import config
+import config 
 import logging
 
 logging.basicConfig(level=logging.INFO)
 
 intents = discord.Intents.default()
-intents.message_content = True # If you use message commands
-intents.members = True # Needed for on_ready guild access
-intents.guilds = True  # Needed for on_ready guild access
+intents.message_content = True 
+intents.members = True
+intents.guilds = True
 
-bot = commands.Bot(command_prefix="!", intents=intents) # Prefix doesn't matter much for buttons
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 class VerificationView(View):
     def __init__(self, base_url: str, guild_id: int):
-        super().__init__(timeout=None) # Persistent view
+        super().__init__(timeout=None)
         self.base_url = base_url
         self.guild_id = guild_id
 
-        # The custom_id is important for persistent views
         verify_button = Button(label="Verify with ION", style=discord.ButtonStyle.green, custom_id="verify_ion_button")
         verify_button.callback = self.verify_button_callback
         self.add_item(verify_button)
 
     async def verify_button_callback(self, interaction: discord.Interaction):
-        # Construct the unique URL for this user to start the OAuth flow
-        # This URL points to your Flask app's /start-verify endpoint
         verification_start_url = f"{self.base_url}/start-verify?user_id={interaction.user.id}&guild_id={self.guild_id}"
         
         logging.info(f"User {interaction.user.name} ({interaction.user.id}) clicked verify. Sending link: {verification_start_url}")
@@ -34,13 +31,23 @@ class VerificationView(View):
         await interaction.response.send_message(
             f"Please click this link to verify with your TJHSST ION account: {verification_start_url}\n"
             "Make sure you are logged into the correct ION account in your browser.",
-            ephemeral=True # Only the user who clicked can see this
+            ephemeral=True
         )
 
 @bot.event
 async def on_ready():
     logging.info(f'{bot.user.name} has connected to Discord!')
     
+    if not config.GUILD_ID or not isinstance(config.GUILD_ID, int):
+        logging.error(f"GUILD_ID (current: {config.GUILD_ID}) is not configured correctly in config.py or .env. Bot cannot proceed.")
+        return
+    if not config.VERIFY_CHANNEL_ID or not isinstance(config.VERIFY_CHANNEL_ID, int):
+        logging.error(f"VERIFY_CHANNEL_ID (current: {config.VERIFY_CHANNEL_ID}) is not configured correctly. Bot cannot proceed.")
+        return
+    if not config.FLASK_BASE_URL:
+        logging.error(f"FLASK_BASE_URL (current: {config.FLASK_BASE_URL}) is not configured. Bot cannot proceed.")
+        return
+
     guild = bot.get_guild(config.GUILD_ID)
     if not guild:
         logging.error(f"Bot could not find Guild with ID: {config.GUILD_ID}. Ensure it's correct and bot is in the server.")
@@ -51,50 +58,53 @@ async def on_ready():
         logging.error(f"Bot could not find Channel with ID: {config.VERIFY_CHANNEL_ID} in guild {guild.name}.")
         return
 
-    # Check if a message with the button already exists to avoid spamming
-    # This is a simple check; more robust would involve storing message ID
-    message_found = False
-    async for msg in channel.history(limit=20): # Check last 20 messages
-        if msg.author == bot.user and msg.components:
-            for row in msg.components:
-                for component in row.children:
-                    if isinstance(component, Button) and component.custom_id == "verify_ion_button":
-                        logging.info("Verification message with button already exists in the channel.")
-                        message_found = True
-                        # Optionally, re-register the view if it's persistent and bot restarted
-                        bot.add_view(VerificationView(base_url=config.FLASK_BASE_URL, guild_id=config.GUILD_ID))
-                        break
-                if message_found: break
-            if message_found: break
-    
-    if not message_found:
-        logging.info(f"Sending new verification message to channel: {channel.name}")
-        view = VerificationView(base_url=config.FLASK_BASE_URL, guild_id=config.GUILD_ID)
+    verification_view = VerificationView(base_url=config.FLASK_BASE_URL, guild_id=config.GUILD_ID)
+
+    bot.add_view(verification_view)
+    logging.info("VerificationView (re-)registered with the bot to handle button interactions.")
+
+    message_found_in_history = False
+    try:
+        async for msg in channel.history(limit=100):
+            if msg.author == bot.user and msg.components:
+                for row in msg.components:
+                    for component in row.children:
+                        if isinstance(component, Button) and component.custom_id == "verify_ion_button":
+                            logging.info(f"Found existing verification message (ID: {msg.id}) in channel {channel.name}'s recent history.")
+                            message_found_in_history = True
+                            break 
+                    if message_found_in_history: break
+                if message_found_in_history: break
+    except discord.Forbidden:
+        logging.error(f"Bot lacks permission to read message history in channel {channel.name} ({channel.id}). Cannot check for existing message.")
+        return
+    except Exception as e:
+        logging.error(f"Error while checking message history: {e}")
+        return
+
+    if not message_found_in_history:
+        logging.info(f"No existing verification message found in the last 100 messages. Sending new one to channel: {channel.name}")
         try:
             await channel.send(
                 "**TJHSST Student Verification**\n\n"
                 "Click the button below to verify your identity using your TJHSST ION account. "
                 "This will assign you the appropriate class year role and remove any unverified roles.",
-                view=view
+                view=verification_view
             )
-            logging.info("Verification message sent.")
+            logging.info("New verification message sent.")
         except discord.Forbidden:
             logging.error(f"Bot does not have permission to send messages in channel {channel.name} ({channel.id}).")
         except Exception as e:
-            logging.error(f"Failed to send verification message: {e}")
+            logging.error(f"Failed to send new verification message: {e}")
     else:
-        # Ensure the view is re-registered if the bot restarts, for persistent views
-        # If you used `super().__init__(timeout=None)` for the View.
-        bot.add_view(VerificationView(base_url=config.FLASK_BASE_URL, guild_id=config.GUILD_ID))
-        logging.info("VerificationView re-registered for persistent button.")
+        logging.info("Existing verification message confirmed in recent history. Bot will use it.")
 
 
 if __name__ == '__main__':
     if not config.DISCORD_BOT_TOKEN:
-        logging.error("DISCORD_BOT_TOKEN not found in .env. Exiting.")
-    elif not config.ION_CLIENT_ID or not config.ION_CLIENT_SECRET:
-        logging.error("ION_CLIENT_ID or ION_CLIENT_SECRET not found in .env. Exiting.")
-    elif not config.GUILD_ID or not config.VERIFY_CHANNEL_ID:
-        logging.error("GUILD_ID or VERIFY_CHANNEL_ID not found in .env. Exiting.")
+        logging.error("DISCORD_BOT_TOKEN not found. Please set it in your .env file or environment variables.")
+    elif not all([config.ION_CLIENT_ID, config.ION_CLIENT_SECRET, config.FLASK_BASE_URL, 
+                  config.ION_REDIRECT_URI, config.GUILD_ID, config.VERIFY_CHANNEL_ID]):
+        logging.error("One or more required configuration variables (ION_CLIENT_ID, ION_CLIENT_SECRET, FLASK_BASE_URL, ION_REDIRECT_URI, GUILD_ID, VERIFY_CHANNEL_ID) are missing.")
     else:
         bot.run(config.DISCORD_BOT_TOKEN)
