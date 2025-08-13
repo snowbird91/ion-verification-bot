@@ -1,0 +1,68 @@
+# render.yaml
+# This file tells Render how to deploy your project.
+
+services:
+  # 1. The Web Service for your Flask app (app.py)
+  - type: web
+    name: ion-bot-web  # A name for your web service
+    runtime: python
+    plan: free # Specifies the free instance type
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    healthCheckPath: /  # Render will ping this path to see if your service is alive
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3 # Match the Python version you want
+      - key: FLASK_BASE_URL
+        fromService:
+          type: web
+          name: ion-bot-web
+          property: url
+      - key: GUILD_ID
+        sync: false # Set this in the dashboard
+      - key: VERIFY_CHANNEL_ID
+        sync: false # Set this in the dashboard
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: ION_CLIENT_ID
+        sync: false
+      - key: ION_CLIENT_SECRET
+        sync: false
+      - key: ION_REDIRECT_URI
+        sync: false
+      - key: CLASS_YEAR_ROLES_JSON
+        sync: false
+      - key: ROLE_TO_REMOVE_NAME
+        sync: false
+
+  # 2. The Background Worker for your Discord bot (bot.py)
+  - type: worker
+    name: ion-bot-worker # A name for your worker service
+    runtime: python
+    plan: free # Specifies the free instance type
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python3 bot.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3 # Match the Python version you want
+      - key: FLASK_BASE_URL # The bot needs to know the web service's URL
+        fromService:
+          type: web
+          name: ion-bot-web
+          property: url
+      - key: GUILD_ID
+        sync: false # Set this in the dashboard
+      - key: VERIFY_CHANNEL_ID
+        sync: false # Set this in the dashboard
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: ION_CLIENT_ID
+        sync: false
+      - key: ION_CLIENT_SECRET
+        sync: false
+      - key: ION_REDIRECT_URI
+        sync: false
+      - key: CLASS_YEAR_ROLES_JSON
+        sync: false
+      - key: ROLE_TO_REMOVE_NAME
+        sync: false
